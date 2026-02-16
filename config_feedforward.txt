@@ -1,0 +1,161 @@
+# ===================== NEAT Algorithm Core Configuration =====================
+[NEAT]
+# Fitness evaluation criterion: select the individual with maximum fitness value (max/min/mean)
+fitness_criterion     = max
+# Evolution termination threshold: stop training when the best individual's fitness reaches 100
+fitness_threshold     = 100
+# Population size: number of neural network individuals (AI birds) per generation
+pop_size              = 100
+# Whether to reset population after all species go extinct: False = do not reset (avoid training interruption)
+reset_on_extinction   = False
+# Critical parameter:
+# False = terminate evolution early if any individual reaches fitness_threshold
+# True = run all specified generations regardless of fitness achievement
+no_fitness_termination = False
+
+# ===================== Neural Network Genome Configuration =====================
+[DefaultGenome]
+# ---------------- Node Activation Function Configuration ----------------
+# Default activation function for all nodes (tanh: output range [-1, 1], suitable for continuous action output)
+activation_default      = tanh
+# Probability of mutating a node's activation function (0 = no mutation, fixed to tanh)
+activation_mutate_rate  = 0.0
+# List of allowed activation functions (only tanh is enabled)
+activation_options      = tanh
+
+# ---------------- Node Aggregation Function Configuration ----------------
+# Default function to aggregate inputs to a node (sum = sum all weighted inputs)
+aggregation_default     = sum
+# Probability of mutating a node's aggregation function (0 = no mutation)
+aggregation_mutate_rate = 0.0
+# List of allowed aggregation functions (only sum is enabled)
+aggregation_options     = sum
+
+# ---------------- Node Bias Configuration ----------------
+# Type of distribution for initial bias values: gaussian = normal distribution
+bias_init_type          = gaussian
+# Mean value for initial bias initialization (normal distribution)
+bias_init_mean          = 0.0
+# Standard deviation for initial bias initialization
+bias_init_stdev         = 1.0
+# Maximum allowed value for node bias (prevent numerical explosion)
+bias_max_value          = 30.0
+# Minimum allowed value for node bias
+bias_min_value          = -30.0
+# Step size for bias mutation (adjustment range per mutation)
+bias_mutate_power       = 0.5
+# Probability of mutating a node's bias value (70% chance to mutate)
+bias_mutate_rate        = 0.7
+# Probability of replacing bias with a new random value (10% chance to reset)
+bias_replace_rate       = 0.1
+
+# ---------------- Genome Compatibility Configuration (Species Division) ----------------
+# Weight of disjoint genes (structural differences between genomes)
+compatibility_disjoint_coefficient = 1.0
+# Weight of weight differences (parameter differences between genomes)
+compatibility_weight_coefficient   = 0.5
+
+# ---------------- Connection (Edge) Add/Remove Configuration ----------------
+# Probability of adding a new connection between existing nodes (50% chance)
+conn_add_prob           = 0.5
+# Probability of deleting an existing connection (50% chance)
+conn_delete_prob        = 0.5
+
+# ---------------- Connection Enable State Configuration ----------------
+# Default state for new connections (True = enabled/active)
+enabled_default         = True
+# Probability of toggling a connection's enabled state (1% chance to switch enable/disable)
+enabled_mutate_rate     = 0.01
+# Rate at which a connection is set to enabled (True) when added: 0.0 = inherit from parent
+enabled_rate_to_true_add = 0.0
+# Rate at which a connection is set to disabled (False) when added: 0.0 = inherit from parent
+enabled_rate_to_false_add = 0.0
+
+# Force feedforward network structure (no recurrent/cyclic connections, fits game decision logic)
+feed_forward            = True
+# Initial connection topology (full = fully connected input-output layers)
+initial_connection      = full
+
+# ---------------- Node (Neuron) Add/Remove Configuration ----------------
+# Probability of adding a new hidden node (20% chance)
+node_add_prob           = 0.2
+# Probability of deleting an existing hidden node (20% chance)
+node_delete_prob        = 0.2
+
+# ---------------- Network Structure Parameters ----------------
+# Initial number of hidden layer nodes (0 = start with no hidden layers, evolve complexity)
+num_hidden              = 0
+# Number of input nodes (3 = Flappy Bird: horizontal distance to pipe, vertical distance, bird height)
+num_inputs              = 3
+# Number of output nodes (1 = Flappy Bird: jump (1) or not (0))
+num_outputs             = 1
+
+# ---------------- Node Response Configuration (Fixed for This NEAT Variant) ----------------
+# Type of distribution for initial response values: gaussian = normal distribution
+response_init_type      = gaussian
+# Initial mean value of node response (fixed at 1.0)
+response_init_mean      = 1.0
+# Standard deviation for initial response (0 = no randomness, fixed value)
+response_init_stdev     = 0.0
+# Maximum allowed value for node response
+response_max_value      = 30.0
+# Minimum allowed value for node response
+response_min_value      = -30.0
+# Step size for response mutation (0 = no mutation)
+response_mutate_power   = 0.0
+# Probability of mutating node response (0 = no mutation)
+response_mutate_rate    = 0.0
+# Probability of replacing response with new random value (0 = no replacement)
+response_replace_rate   = 0.0
+
+# ---------------- Connection Weight Configuration ----------------
+# Type of distribution for initial weight values: gaussian = normal distribution
+weight_init_type        = gaussian
+# Mean value for initial weight initialization (normal distribution)
+weight_init_mean        = 0.0
+# Standard deviation for initial weight initialization
+weight_init_stdev       = 1.0
+# Maximum allowed value for connection weight (prevent gradient explosion)
+weight_max_value        = 30
+# Minimum allowed value for connection weight
+weight_min_value        = -30
+# Step size for weight mutation (adjustment range per mutation)
+weight_mutate_power     = 0.5
+# Probability of mutating a connection's weight (80% chance, high frequency for fast evolution)
+weight_mutate_rate      = 0.8
+# Probability of replacing weight with new random value (10% chance to reset)
+weight_replace_rate     = 0.1
+
+# ---------------- Structural Mutation Control (NEW REQUIRED PARAMETERS) ----------------
+# Whether to allow only one structural mutation (add/remove node/connection) per genome per generation
+# False = allow multiple structural mutations in one generation
+single_structural_mutation = false
+
+# The surer (ensurer) function to use for structural mutations
+# 'default' = use the built-in default function to ensure network validity after mutation
+structural_mutation_surer = default
+
+# ===================== Species Set Configuration =====================
+[DefaultSpeciesSet]
+# Species compatibility threshold: genomes with compatibility >3.0 are classified as new species
+# Larger value = fewer species; smaller value = more species (finer division)
+compatibility_threshold = 3.0
+
+# ===================== Species Stagnation Configuration =====================
+[DefaultStagnation]
+# Method to calculate species fitness (max = use the best individual's fitness in the species)
+species_fitness_func = max
+# Maximum stagnation generations: species with no improvement for 20 consecutive generations are eliminated
+max_stagnation       = 20
+# Number of elite individuals to retain per stagnant species (2 individuals, avoid losing good genes)
+species_elitism      = 2
+
+# ===================== Reproduction Configuration =====================
+[DefaultReproduction]
+# Number of elite individuals to retain per generation (2 individuals, skip crossover/mutation)
+elitism            = 2
+# Survival threshold: only top 20% of individuals survive to participate in reproduction (survival of the fittest)
+survival_threshold = 0.2
+# Minimum species size: species below this size are not considered for reproduction
+# 1 = even single-individual species can reproduce, preventing extinction
+min_species_size = 1

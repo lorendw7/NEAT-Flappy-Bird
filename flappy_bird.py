@@ -1,9 +1,6 @@
-from tkinter import font
-
 import pygame
 import random
 import os
-import time
 import neat
 
 # 初始化 Pygame 的字体模块
@@ -251,108 +248,220 @@ class Base:
         win.blit(self.IMG, (self.x2, self.y))
 
 
-def draw_window(win, bird, pipes, base, score):
+def draw_window(win, birds, pipes, base, score):
+    """
+    绘制游戏每一帧的所有视觉元素
+    参数说明：
+    - win: pygame游戏窗口对象（画布）
+    - birds: 小鸟对象列表（AI控制的所有小鸟）
+    - pipes: 管道对象列表（当前屏幕上的所有管道）
+    - base: 地面对象（实现滚动效果）
+    - score: 当前游戏分数
+    """
     # 绘制背景图：将背景图片 BG_IMG 绘制到窗口的左上角 (0, 0)
     win.blit(BG_IMG, (0, 0))
-    # 遍历所有管道对象，依次绘制到窗口上
+
+    # 遍历所有管道对象，依次绘制到窗口上（Pipe类的draw方法负责绘制上下两根管道）
     for pipe in pipes:
         pipe.draw(win)
 
     # 渲染分数文本：
+    # STAT_FONT：预加载的字体对象（需提前初始化）
     # "Score: " + str(score)：要显示的文本内容
-    # True：开启抗锯齿，让文字更平滑
-    # (255, 255, 255)：文字颜色为白色
+    # True：开启抗锯齿，让文字边缘更平滑
+    # (255, 255, 255)：RGB颜色值，代表白色
     text = STAT_FONT.render("Score: " + str(score), True, (255, 255, 255))
-    # 将分数文本绘制到窗口右上角
-    # x坐标：窗口宽度 - 10（右边距）- 文本宽度，实现右对齐
-    # y坐标：距离顶部10像素
+
+    # 将分数文本绘制到窗口右上角：
+    # x坐标：窗口宽度 - 10（右边距）- 文本宽度 → 实现文字右对齐
+    # y坐标：10 → 距离顶部10像素的上边距
     win.blit(text, (WIN_WIDTH - 10 - text.get_width(), 10))
 
-    # 调用小鸟对象的 draw 方法，将小鸟绘制到窗口上
-    bird.draw(win)
-    # 更新整个屏幕的显示，把这一帧的所有绘制内容呈现出来
+    # 遍历所有小鸟对象，绘制到窗口上（Bird类的draw方法负责绘制小鸟图像）
+    for bird in birds:
+        bird.draw(win)
+
+    # 绘制地面（Base类的draw方法负责绘制滚动的地面）
+    base.draw(win)
+
+    # 更新整个屏幕的显示：把当前帧所有绘制的内容一次性呈现出来
+    # 注：pygame采用双缓冲机制，需调用此方法才会显示绘制内容
     pygame.display.update()
 
 
-def main():
-    # ========== 游戏初始化 ==========
-    # 创建小鸟对象，初始位置设置在 (230, 350)（屏幕偏中下位置，更符合游戏初始体验）
-    bird = Bird(230, 350)
-    # 初始化管道列表，先创建一根管道，初始x坐标600（屏幕右侧外，准备进入画面）
-    pipes = [Pipe(600)]
-    # 创建地面对象，y坐标730（接近屏幕底部，符合Flappy Bird地面位置）
-    base = Base(730)
-    # 创建游戏窗口，尺寸为预定义的宽高常量
-    win = pygame.display.set_mode((WIN_WIDTH, WIN_HEIGHT))
-    # 创建时钟对象，用于控制游戏帧率，保证不同设备运行速度一致
-    clock = pygame.time.Clock()
+def main(genomes, config):
+    """
+    NEAT算法的核心运行函数（每一代种群的游戏循环）
+    参数说明：
+    - genomes: NEAT库传入的基因组列表（每一个基因组对应一只AI小鸟）
+    - config: NEAT配置对象（加载自config_feedforward.txt）
+    """
 
-    # 初始化游戏分数为0
-    score = 0
+    # --- 1. 在游戏开始前初始化并播放背景音乐 ---
+    # 初始化 Pygame 的混音器模块
+    pygame.mixer.init()
+    # 加载背景音乐文件
+    pygame.mixer.music.load('Investigations.mp3')
+    # 设置音量（0.0 到 1.0 之间，这里设为50%）
+    pygame.mixer.music.set_volume(0.5)
+    # 播放音乐，-1 表示无限循环播放
+    pygame.mixer.music.play(-1)
 
-    # 游戏主循环的运行标志（True表示游戏运行，False则退出）
-    run = True
-    # ========== 游戏主循环 ==========
+
+    # ========== 初始化种群相关变量 ==========
+    birds = []  # 存储所有小鸟对象的列表
+    nets = []  # 存储所有神经网络对象的列表（每个小鸟对应一个神经网络）
+    ge = []  # 存储所有基因组对象的列表（记录每只小鸟的适应度）
+
+    # 遍历NEAT传入的基因组（genomes是元组列表：(基因组ID, 基因组对象)）
+    for _, g in genomes:
+        # 根据基因组和配置创建前馈神经网络（小鸟的"大脑"）
+        net = neat.nn.FeedForwardNetwork.create(g, config)
+        nets.append(net)  # 将神经网络加入列表
+        birds.append(Bird(230, 350))  # 创建小鸟对象（初始位置x=230, y=350）
+        g.fitness = 0  # 初始化基因组的适应度为0（适应度越高，越容易被保留）
+        ge.append(g)  # 将基因组加入列表
+
+    # ========== 游戏元素初始化 ==========
+    pipes = [Pipe(600)]  # 初始化管道列表：先创建1根管道，x坐标600（屏幕右侧外，准备进入画面）
+    base = Base(730)  # 创建地面对象：y坐标730（接近窗口底部，符合Flappy Bird地面位置）
+    win = pygame.display.set_mode((WIN_WIDTH, WIN_HEIGHT))  # 创建游戏窗口（指定宽高）
+    clock = pygame.time.Clock()  # 创建时钟对象：用于控制游戏帧率，保证不同设备运行速度一致
+
+    score = 0  # 初始化游戏分数为0（飞过一根管道+1分）
+    run = True  # 游戏主循环的运行标志（True=继续运行，False=退出循环）
+
+    # ========== 游戏主循环（每一代种群的生命周期） ==========
     while run:
-        # 限制游戏帧率为30 FPS，即每秒最多执行30次循环，避免游戏速度过快
+        # 限制游戏帧率为30 FPS：每秒最多执行30次循环，避免游戏速度过快
         clock.tick(30)
 
-        # ========== 事件处理 ==========
-        # 遍历所有Pygame事件（用户输入/系统事件）
+        # ========== 事件处理（用户输入/系统事件） ==========
         for event in pygame.event.get():
-            # 检测到关闭窗口事件时，终止主循环
+            # 检测到"关闭窗口"事件：终止游戏
             if event.type == pygame.QUIT:
-                run = False
+                run = False  # 退出主循环
+                pygame.quit()  # 关闭pygame模块
+                quit()
 
-        # ========== 小鸟运动（当前被注释，如需启用需取消注释） ==========
-        # bird.move()  # 更新小鸟的位置、角度、动画帧等物理状态
+        # ========== 确定小鸟需要关注的管道（核心逻辑） ==========
+        pipe_ind = 0  # 默认关注第0根管道（屏幕中最左侧的管道）
+        if len(birds) > 0:  # 如果还有存活的小鸟
+            # 如果存在多根管道，且小鸟飞过了第0根管道 → 切换关注第1根管道
+            if len(pipes) > 1 and birds[0].x > pipes[0].x + pipes[0].PIPE_TOP.get_width():
+                pipe_ind = 1
+        else:
+            run = False  # 所有小鸟都死亡 → 终止本轮循环（进入下一代）
+            break
 
-        # ========== 管道逻辑处理 ==========
+        # ========== 每只小鸟的AI决策与适应度更新 ==========
+        for x, bird in enumerate(birds):
+            bird.move()  # 让小鸟自然下落（Bird类的move方法实现重力效果）
+            ge[x].fitness += 0.1  # 每存活一帧，适应度+0.1（鼓励小鸟"活更久"）
+
+            # 神经网络输入（小鸟的3个感知特征）：
+            # 1. bird.x：小鸟的x坐标（水平位置）
+            # 2. abs(bird.y - pipes[pipe_ind].height)：小鸟与上管道底部的垂直距离
+            # 3. abs(bird.y - pipes[pipe_ind].bottom)：小鸟与下管道顶部的垂直距离
+            output = nets[x].activate((bird.x,
+                                       abs(bird.y - pipes[pipe_ind].height),
+                                       abs(bird.y - pipes[pipe_ind].bottom)))
+
+            # 神经网络输出：output[0]是0~1之间的数值（tanh激活函数输出归一化后）
+            # 如果输出>0.5 → 让小鸟跳跃（Bird类的jump方法实现向上飞）
+            if output[0] > 0.5:
+                bird.jump()
+
+        # ========== 管道逻辑处理（移动/碰撞/新增/删除） ==========
         rem = []  # 存储需要删除的管道（已移出屏幕的管道）
         add_pipe = False  # 标记是否需要新增管道（小鸟飞过当前管道后）
 
-        # 遍历所有管道，处理每个管道的移动、碰撞、删除逻辑
         for pipe in pipes:
-            # 让管道向左移动（模拟小鸟向前飞）
-            pipe.move()
+            pipe.move()  # 让管道向左移动（模拟小鸟向前飞的视觉效果）
 
-            # 检测小鸟是否与当前管道碰撞（碰撞后暂时pass，可后续添加游戏结束逻辑）
-            if pipe.collide(bird):
-                pass
+            # 检测每只小鸟与管道的碰撞
+            for x, bird in enumerate(birds):
+                if pipe.collide(bird):  # Pipe类的collide方法检测碰撞
+                    ge[x].fitness -= 1  # 碰撞惩罚：适应度-1（鼓励小鸟避开管道）
+                    # 移除碰撞的小鸟、对应的神经网络和基因组
+                    birds.pop(x)
+                    nets.pop(x)
+                    ge.pop(x)
 
-            # 如果管道完全移出屏幕左侧（x坐标 + 管道宽度 < 0），加入待删除列表
+                # 检测小鸟是否飞过管道（未标记passed，且管道x坐标 < 小鸟x坐标）
+                if not pipe.passed and pipe.x < bird.x:
+                    pipe.passed = True  # 标记该管道已被飞过
+                    add_pipe = True  # 标记需要新增一根管道
+
+            # 如果管道完全移出屏幕左侧 → 加入待删除列表（释放内存）
             if pipe.x + pipe.PIPE_TOP.get_width() < 0:
                 rem.append(pipe)
 
-            # 如果小鸟飞过当前管道（管道未标记为passed，且管道x坐标 < 小鸟x坐标）
-            if not pipe.passed and pipe.x < bird.x:
-                pipe.passed = True  # 标记该管道已被飞过
-                add_pipe = True  # 标记需要新增一根管道
-
-        # 如果小鸟飞过管道，分数+1，并在屏幕右侧新增一根管道
+        # 小鸟飞过管道：分数+1，所有存活小鸟的适应度+5（奖励正确行为）
         if add_pipe:
             score += 1
-            pipes.append(Pipe(600))
+            for g in ge:
+                g.fitness += 5  # 飞过管道奖励：适应度+5（比存活奖励更高，引导核心行为）
+            pipes.append(Pipe(600))  # 在屏幕右侧新增一根管道
 
-        # 移除所有已移出屏幕的管道，释放内存
+        # 移除所有已移出屏幕的管道
         for r in rem:
             pipes.remove(r)
 
-        # ========== 地面碰撞检测 ==========
-        # 如果小鸟的底部超过地面y坐标（730），说明撞到地面（暂时pass，可添加游戏结束逻辑）
-        if bird.y + bird.img.get_height() > 730:
-            pass
+        # ========== 地面/顶部碰撞检测 ==========
+        for x, bird in enumerate(birds):
+            # 小鸟撞到地面（y坐标+小鸟高度 > 地面y坐标）或飞出屏幕顶部（y < 0）
+            if bird.y + bird.img.get_height() > 730 or bird.y < 0:
+                # 移除撞地/出界的小鸟、对应的神经网络和基因组
+                birds.pop(x)
+                nets.pop(x)
+                ge.pop(x)
 
         # ========== 地面移动 ==========
-        base.move()  # 让地面向左滚动，实现无限地面效果
+        base.move()  # 让地面向左滚动（Base类的move方法实现无限地面效果）
 
-        # ========== 画面绘制 ==========
-        # 绘制当前帧的所有元素：背景、管道、分数、地面、小鸟，并更新屏幕
-        draw_window(win, bird, pipes, base, score)  # 注：原代码漏传score参数，此处补全，否则分数无法显示
+        # ========== 绘制当前帧 ==========
+        draw_window(win, birds, pipes, base, score)  # 绘制所有元素并更新屏幕
 
-    # ========== 游戏退出 ==========
-    pygame.quit()  # 退出Pygame模块
-    quit()  # 终止Python程序
 
-# 调用 main 函数，启动游戏
-main()
+def run(config_file):
+    """
+    运行 NEAT 进化算法，训练 Flappy Bird AI
+    :param config_file: NEAT 配置文件路径
+    """
+    # 从配置文件创建 NEAT 配置对象
+    # 依次传入：基因组类、繁殖类、物种集合类、停滞检测类、配置文件对象
+    config = neat.config.Config(
+        neat.DefaultGenome,
+        neat.DefaultReproduction,
+        neat.DefaultSpeciesSet,
+        neat.DefaultStagnation,
+        config_file
+    )
+
+
+    # 创建种群对象，代表当前一代的所有 AI 小鸟
+    p = neat.Population(config)
+
+    # 添加标准输出报告器：在控制台打印每一代的进化信息（如适应度、物种数量）
+    p.add_reporter(neat.StdOutReporter(True))
+    # 添加统计报告器：记录进化过程中的数据（如平均适应度、最优适应度）
+    stats = neat.StatisticsReporter()
+    p.add_reporter(stats)
+
+    # 运行进化过程：
+    # - main：评估函数，用于评估每个基因组（AI小鸟）的适应度
+    # - 50：最大进化代数，进化到50代后停止
+    winner = p.run(main, 50)
+
+    # 打印最终进化出的最优基因组（表现最好的AI小鸟的“大脑”结构）
+    print('\nBest genome:\n{!s}'.format(winner))
+
+
+if __name__ == '__main__':
+    # 获取当前脚本所在目录，用于拼接配置文件路径
+    local_dir = os.path.dirname(__file__)
+    # 拼接配置文件路径：当前目录下的 config_feedforward.txt
+    config_path = os.path.join(local_dir, 'config_feedforward.txt')
+    # 调用 run 函数，开始训练 AI
+    run(config_path)
